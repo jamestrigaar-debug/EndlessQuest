@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EndlessQuest</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #121212;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #status-bar {
+      height: 60px;
+      background: #1e1e1e;
+      border-bottom: 2px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 16px;
+      font-size: 14px;
+    }
+    #main-area {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    #map-container {
+      flex: 1;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+    }
+    #action-panel {
+      width: 200px;
+      background: #1e1e1e;
+      border-left: 2px solid #333;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #action-panel h3 {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #90B77D;
+    }
+    #action-panel button {
+      background: #2a2a2a;
+      color: #e0e0e0;
+      border: 1px solid #444;
+      padding: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    #action-panel button:hover:not(:disabled) {
+      background: #3a3a3a;
+      border-color: #90B77D;
+    }
+    #action-panel button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #movement-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    #movement-grid button {
+      aspect-ratio: 1;
+      font-size: 16px;
+    }
+    #log-panel {
+      height: 180px;
+      background: #1a1a1a;
+      border-top: 2px solid #333;
+      padding: 8px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    #log-panel .log-entry {
+      padding: 2px 0;
+      border-bottom: 1px solid #222;
+    }
+    #log-panel .log-entry.movement { color: #aaa; }
+    #log-panel .log-entry.system { color: #4A90E2; }
+    #log-panel .log-entry.danger { color: #e74c3c; }
+    #log-panel .log-entry.search { color: #f1c40f; }
+    #log-panel .log-entry.rest { color: #90B77D; }
+    #log-panel .log-entry.error { color: #e74c3c; font-weight: bold; }
+    .status-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .status-label { font-size: 10px; color: #888; text-transform: uppercase; }
+    .status-value { font-weight: bold; }
+    .hp-bar {
+      width: 80px;
+      height: 6px;
+      background: #333;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .hp-fill {
+      height: 100%;
+      background: #e74c3c;
+      transition: width 0.3s;
+    }
+    .need-bar {
+      width: 60px;
+      height: 4px;
+      background: #333;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .need-fill {
+      height: 100%;
+      transition: width 0.3s;
+    }
+    .need-fill.hunger { background: #e67e22; }
+    .need-fill.thirst { background: #3498db; }
+    .need-fill.fatigue { background: #9b59b6; }
+  </style>
+</head>
+<body>
+  <div id="status-bar"></div>
+  <div id="main-area">
+    <div id="map-container"></div>
+    <div id="action-panel"></div>
+  </div>
+  <div id="log-panel"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
