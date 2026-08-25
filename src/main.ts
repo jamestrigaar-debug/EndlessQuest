@@ -5,7 +5,8 @@ function getInitialSeed(): string {
   const params = new URLSearchParams(window.location.search);
   const seedParam = params.get('seed');
   if (seedParam) return seedParam;
-  return Math.floor(Math.random() * 1000000).toString();
+  // Use timestamp for initial random seed (outside core simulation, so Math.random avoided in core)
+  return Date.now().toString();
 }
 
 async function main(): Promise<void> {

@@ -95,7 +95,7 @@ export class SimulationLoop {
   }
 
   newGame(seed?: string | number): void {
-    const newSeed = seed ?? Math.floor(Math.random() * 1000000).toString();
+    const newSeed = seed ?? Date.now().toString();
     const newRng = new SeededRNG(newSeed);
     const newMapGen = new MapGenerator(newRng);
     const world = new World();

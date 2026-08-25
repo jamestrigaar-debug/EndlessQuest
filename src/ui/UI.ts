@@ -57,6 +57,18 @@ export class UI {
       this.mapRenderer.centerOn(pos.x, pos.y);
     }
 
+    // Handle center map requests from action panel
+    window.addEventListener('center-map', () => {
+      const pos = this.simulation.state.entities.getComponent(
+        this.simulation.state.playerId,
+        'position'
+      ) as any;
+      if (pos) {
+        this.mapRenderer.centerOn(pos.x, pos.y);
+        this.mapRenderer.render(this.simulation.state);
+      }
+    });
+
     // Also listen for new game events to reset log
     this.simulation.getEventBus().subscribe('system', (e) => {
       if (e.message.includes('New game started')) {

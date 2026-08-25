@@ -90,14 +90,6 @@ export class MapRenderer {
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
       this.zoom = Math.max(0.5, Math.min(2.5, this.zoom + delta));
     });
-
-    // Center on event
-    window.addEventListener('center-map', () => {
-      const evt = window as any;
-      if (evt._lastPlayerPos) {
-        this.centerOn(evt._lastPlayerPos.x, evt._lastPlayerPos.y);
-      }
-    });
   }
 
   render(state: GameState): void {
@@ -105,9 +97,6 @@ export class MapRenderer {
 
     const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
     if (!pos) return;
-
-    // Store for center event
-    (window as any)._lastPlayerPos = { x: pos.x, y: pos.y };
 
     // Auto-center if player near edge of viewport? For simplicity, always center unless dragging
     if (!this.isDragging) {
