@@ -2,22 +2,34 @@ import type { SimulationLoop } from '../../core/simulation/SimulationLoop';
 import { TERRAIN_PASSABLE } from '../../core/world/TerrainType';
 import type { PositionComponent } from '../../core/ecs/Component';
 
+/**
+ * UI panel providing directional movement buttons, action triggers (Rest, Search, New Game),
+ * and keyboard shortcut handling.
+ */
 export class ActionPanel {
   private container: HTMLElement;
   private simulation: SimulationLoop;
+  private keydownHandler: (e: KeyboardEvent) => void;
 
+  /**
+   * @param container DOM element hosting the action controls
+   * @param simulation Active SimulationLoop instance
+   */
   constructor(container: HTMLElement, simulation: SimulationLoop) {
     this.container = container;
     this.simulation = simulation;
     this.render();
-    this.bindKeyboard();
+    this.keydownHandler = (e: KeyboardEvent) => this.handleKeyDown(e);
+    window.addEventListener('keydown', this.keydownHandler);
   }
 
+  /**
+   * Renders the action controls and directional movement grid.
+   */
   render(): void {
     const state = this.simulation.state;
     const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
 
-    // Determine passability for each direction
     const canMove = {
       north: this.canMoveTo(pos, 0, -1),
       south: this.canMoveTo(pos, 0, 1),
@@ -51,6 +63,9 @@ export class ActionPanel {
     this.bindButtons();
   }
 
+  /**
+   * Checks if moving by (dx, dy) lands on an in-bounds, passable tile.
+   */
   private canMoveTo(pos: PositionComponent | undefined, dx: number, dy: number): boolean {
     if (!pos) return false;
     const state = this.simulation.state;
@@ -61,6 +76,9 @@ export class ActionPanel {
     return TERRAIN_PASSABLE[tile.terrain];
   }
 
+  /**
+   * Binds click handlers to button elements.
+   */
   private bindButtons(): void {
     const buttons = this.container.querySelectorAll('button');
     buttons.forEach((btn) => {
@@ -90,7 +108,6 @@ export class ActionPanel {
             this.simulation.submitCommand({ type: 'SEARCH' });
             break;
           case 'center':
-            // Dispatch custom event for map renderer to center
             window.dispatchEvent(new CustomEvent('center-map'));
             break;
           case 'new-game': {
@@ -100,60 +117,57 @@ export class ActionPanel {
             break;
           }
         }
-        this.render();
       });
     });
   }
 
-  private bindKeyboard(): void {
-    window.addEventListener('keydown', (e) => {
-      // Ignore if typing in input
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+  /**
+   * Handles keyboard navigation shortcuts.
+   */
+  private handleKeyDown(e: KeyboardEvent): void {
+    if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
 
-      switch (e.key) {
-        case 'ArrowUp':
-          e.preventDefault();
-          this.simulation.submitCommand({ type: 'MOVE', direction: 'north' });
-          this.render();
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          this.simulation.submitCommand({ type: 'MOVE', direction: 'south' });
-          this.render();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          this.simulation.submitCommand({ type: 'MOVE', direction: 'west' });
-          this.render();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          this.simulation.submitCommand({ type: 'MOVE', direction: 'east' });
-          this.render();
-          break;
-        case 'r':
-        case 'R': {
-          e.preventDefault();
-          if (e.shiftKey) {
-            this.simulation.submitCommand({ type: 'REST', hours: 8 });
-          } else {
-            this.simulation.submitCommand({ type: 'REST', hours: 1 });
-          }
-          this.render();
-          break;
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault();
+        this.simulation.submitCommand({ type: 'MOVE', direction: 'north' });
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        this.simulation.submitCommand({ type: 'MOVE', direction: 'south' });
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        this.simulation.submitCommand({ type: 'MOVE', direction: 'west' });
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        this.simulation.submitCommand({ type: 'MOVE', direction: 'east' });
+        break;
+      case 'r':
+      case 'R': {
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.simulation.submitCommand({ type: 'REST', hours: 8 });
+        } else {
+          this.simulation.submitCommand({ type: 'REST', hours: 1 });
         }
-        case 's':
-        case 'S': {
-          e.preventDefault();
-          this.simulation.submitCommand({ type: 'SEARCH' });
-          this.render();
-          break;
-        }
+        break;
       }
-    });
+      case 's':
+      case 'S': {
+        e.preventDefault();
+        this.simulation.submitCommand({ type: 'SEARCH' });
+        break;
+      }
+    }
   }
 
+  /**
+   * Unbinds listeners and clears container.
+   */
   destroy(): void {
+    window.removeEventListener('keydown', this.keydownHandler);
     this.container.innerHTML = '';
   }
 }

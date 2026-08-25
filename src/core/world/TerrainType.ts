@@ -1,3 +1,6 @@
+/**
+ * Discrete terrain classifications for EndlessQuest world map.
+ */
 export enum TerrainType {
   PLAINS = 'plains',
   FOREST = 'forest',
@@ -7,6 +10,10 @@ export enum TerrainType {
   SWAMP = 'swamp',
 }
 
+/**
+ * Movement cost in simulation hours per terrain type.
+ * Infinity indicates impassable terrain.
+ */
 export const TERRAIN_MOVEMENT_COST: Record<TerrainType, number> = {
   [TerrainType.PLAINS]: 1,
   [TerrainType.FOREST]: 2,
@@ -16,6 +23,9 @@ export const TERRAIN_MOVEMENT_COST: Record<TerrainType, number> = {
   [TerrainType.WATER]: Infinity,
 };
 
+/**
+ * 24-bit RGB hex colors used for terrain map visualization.
+ */
 export const TERRAIN_COLOR: Record<TerrainType, number> = {
   [TerrainType.PLAINS]: 0x90B77D,
   [TerrainType.FOREST]: 0x2D5016,
@@ -25,6 +35,9 @@ export const TERRAIN_COLOR: Record<TerrainType, number> = {
   [TerrainType.SWAMP]: 0x5D4E37,
 };
 
+/**
+ * Terrain passability flag.
+ */
 export const TERRAIN_PASSABLE: Record<TerrainType, boolean> = {
   [TerrainType.PLAINS]: true,
   [TerrainType.FOREST]: true,
@@ -34,4 +47,7 @@ export const TERRAIN_PASSABLE: Record<TerrainType, boolean> = {
   [TerrainType.WATER]: false,
 };
 
-export const ALL_TERRAIN_TYPES = Object.values(TerrainType) as TerrainType[];
+/**
+ * Array of all terrain enum members.
+ */
+export const ALL_TERRAIN_TYPES: TerrainType[] = Object.values(TerrainType) as TerrainType[];

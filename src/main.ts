@@ -1,14 +1,19 @@
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { UI } from './ui/UI';
 
+/**
+ * Extracts initial seed from URL parameter (?seed=...) or defaults to current timestamp.
+ */
 function getInitialSeed(): string {
   const params = new URLSearchParams(window.location.search);
   const seedParam = params.get('seed');
   if (seedParam) return seedParam;
-  // Use timestamp for initial random seed (outside core simulation, so Math.random avoided in core)
   return Date.now().toString();
 }
 
+/**
+ * Application bootstrap entry point.
+ */
 async function main(): Promise<void> {
   const seed = getInitialSeed();
   console.log(`Starting EndlessQuest with seed: ${seed}`);
@@ -19,22 +24,10 @@ async function main(): Promise<void> {
   const ui = new UI(appContainer, simulation);
   await ui.initialize();
 
-  (window as any).simulation = simulation;
-  (window as any).ui = ui;
-
-  const originalNewGame = simulation.newGame.bind(simulation);
-  simulation.newGame = (newSeed?: string | number) => {
-    originalNewGame(newSeed);
-    // Re-initialize UI after new game (event bus was cleared)
-    ui.initialize().then(() => {
-      console.log('UI re-initialized after new game');
-    });
-    if (newSeed) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('seed', newSeed.toString());
-      window.history.replaceState({}, '', url.toString());
-    }
-  };
+  // Expose global debug handles on window object
+  const globalObj = window as unknown as Record<string, unknown>;
+  globalObj.simulation = simulation;
+  globalObj.ui = ui;
 
   console.log('EndlessQuest initialized');
 }
