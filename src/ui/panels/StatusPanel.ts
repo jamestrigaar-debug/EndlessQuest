@@ -1,25 +1,38 @@
 import type { GameState } from '../../core/state/GameState';
 import { getCurrentTile } from '../../core/state/GameState';
-import type { StatsComponent } from '../../core/ecs/Component';
+import type { PositionComponent, StatsComponent } from '../../core/ecs/Component';
+import { DEFAULT_MAX_HP, DEFAULT_INITIAL_HP } from '../../core/SimulationConstants';
 
+/**
+ * UI panel rendering player vital statistics, current calendar time, world coordinates, and seed.
+ */
 export class StatusPanel {
   private container: HTMLElement;
 
+  /**
+   * @param container DOM element hosting the status bar
+   */
   constructor(container: HTMLElement) {
     this.container = container;
   }
 
+  /**
+   * Renders current player stats and world information.
+   * @param state GameState
+   */
   render(state: GameState): void {
     const stats = state.entities.getComponent<StatsComponent>(state.playerId, 'stats');
+    const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
     const tile = getCurrentTile(state);
 
-    const hp = stats?.hp ?? 100;
-    const maxHp = stats?.maxHp ?? 100;
+    const hp = stats?.hp ?? DEFAULT_INITIAL_HP;
+    const maxHp = stats?.maxHp ?? DEFAULT_MAX_HP;
     const hunger = stats?.hunger ?? 0;
     const thirst = stats?.thirst ?? 0;
     const fatigue = stats?.fatigue ?? 0;
 
     const hpPercent = Math.max(0, Math.min(100, (hp / maxHp) * 100));
+    const locationStr = pos ? `${pos.x},${pos.y}` : '';
 
     this.container.innerHTML = `
       <div class="status-item">
@@ -44,11 +57,11 @@ export class StatusPanel {
       </div>
       <div class="status-item">
         <span class="status-label">Time</span>
-        <span class="status-value">Y${state.year} D${state.day} ${String(state.hour).padStart(2,'0')}:00</span>
+        <span class="status-value">Y${state.year} D${state.day} ${String(state.hour).padStart(2, '0')}:00</span>
       </div>
       <div class="status-item">
         <span class="status-label">Location</span>
-        <span class="status-value">${tile?.terrain ?? 'unknown'} (${state.entities.getComponent(state.playerId, 'position') ? `${(state.entities.getComponent(state.playerId, 'position') as any).x},${(state.entities.getComponent(state.playerId, 'position') as any).y}` : ''})</span>
+        <span class="status-value">${tile?.terrain ?? 'unknown'}${locationStr ? ` (${locationStr})` : ''}</span>
       </div>
       <div class="status-item">
         <span class="status-label">Seed</span>
@@ -57,6 +70,9 @@ export class StatusPanel {
     `;
   }
 
+  /**
+   * Clears panel container contents.
+   */
   destroy(): void {
     this.container.innerHTML = '';
   }

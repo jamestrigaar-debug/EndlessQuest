@@ -1,22 +1,40 @@
 import type { GameEvent } from './GameEvent';
 
-type EventCallback = (event: GameEvent) => void;
+/**
+ * Event callback listener type.
+ */
+export type EventCallback = (event: GameEvent) => void;
 
+/**
+ * Pub/Sub event bus supporting type-specific and wildcard event subscriptions.
+ */
 export class EventBus {
   private listeners: Map<string, Set<EventCallback>> = new Map();
   private globalListeners: Set<EventCallback> = new Set();
 
+  /**
+   * Subscribes a callback to a specific event type, or '*' for all events.
+   * @param type Event type string or '*' for wildcard
+   * @param callback Callback receiving the GameEvent
+   */
   subscribe(type: string, callback: EventCallback): void {
     if (type === '*') {
       this.globalListeners.add(callback);
       return;
     }
-    if (!this.listeners.has(type)) {
-      this.listeners.set(type, new Set());
+    let set = this.listeners.get(type);
+    if (!set) {
+      set = new Set();
+      this.listeners.set(type, set);
     }
-    this.listeners.get(type)!.add(callback);
+    set.add(callback);
   }
 
+  /**
+   * Unsubscribes a previously registered callback.
+   * @param type Event type string or '*' for wildcard
+   * @param callback Callback instance to remove
+   */
   unsubscribe(type: string, callback: EventCallback): void {
     if (type === '*') {
       this.globalListeners.delete(callback);
@@ -25,10 +43,16 @@ export class EventBus {
     const set = this.listeners.get(type);
     if (set) {
       set.delete(callback);
-      if (set.size === 0) this.listeners.delete(type);
+      if (set.size === 0) {
+        this.listeners.delete(type);
+      }
     }
   }
 
+  /**
+   * Dispatches an event to all relevant type listeners and wildcard listeners.
+   * @param event GameEvent to emit
+   */
   emit(event: GameEvent): void {
     const specific = this.listeners.get(event.type);
     if (specific) {
@@ -36,20 +60,22 @@ export class EventBus {
         try {
           cb(event);
         } catch (e) {
-          console.error('EventBus callback error', e);
+          console.error(`EventBus callback error on type "${event.type}":`, e);
         }
       }
     }
-    // Also call wildcard listeners
     for (const cb of this.globalListeners) {
       try {
         cb(event);
       } catch (e) {
-        console.error('EventBus global callback error', e);
+        console.error('EventBus wildcard callback error:', e);
       }
     }
   }
 
+  /**
+   * Clears all registered event listeners.
+   */
   clear(): void {
     this.listeners.clear();
     this.globalListeners.clear();

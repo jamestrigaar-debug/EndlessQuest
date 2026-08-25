@@ -4,8 +4,25 @@ import { advanceTime, getCurrentTile, revealArea } from './GameState';
 import { EventBus } from '../../events/EventBus';
 import type { GameEvent } from '../../events/GameEvent';
 import { TerrainType } from '../world/TerrainType';
-import type { PositionComponent } from '../ecs/Component';
+import type { PositionComponent, StatsComponent } from '../ecs/Component';
+import {
+  FATIGUE_PER_MOVE_COST,
+  FATIGUE_REST_RECOVERY_PER_HOUR,
+  HUNGER_REST_INCREASE_PER_HOUR,
+  THIRST_REST_INCREASE_PER_HOUR,
+  MIN_REST_HOURS,
+  MAX_REST_HOURS,
+  SEARCH_TIME_COST_HOURS,
+  SEARCH_SUCCESS_PROBABILITY,
+  SEARCH_REVEAL_RADIUS,
+  DEFAULT_REVEAL_RADIUS,
+  MIN_STAT_VALUE,
+  MAX_STAT_VALUE,
+} from '../SimulationConstants';
 
+/**
+ * Directional coordinate offsets.
+ */
 const DIRECTION_DELTAS: Record<Direction, { dx: number; dy: number }> = {
   north: { dx: 0, dy: -1 },
   south: { dx: 0, dy: 1 },
@@ -13,6 +30,9 @@ const DIRECTION_DELTAS: Record<Direction, { dx: number; dy: number }> = {
   west: { dx: -1, dy: 0 },
 };
 
+/**
+ * Descriptive text for terrain types.
+ */
 const TERRAIN_DESCRIPTIONS: Record<string, string> = {
   [TerrainType.PLAINS]: 'a grassy plain',
   [TerrainType.FOREST]: 'a dense forest',
@@ -22,9 +42,25 @@ const TERRAIN_DESCRIPTIONS: Record<string, string> = {
   [TerrainType.SWAMP]: 'a murky swamp',
 };
 
-export class CommandHandler {
+/**
+ * Command handler interface.
+ */
+export interface ICommandHandler {
+  handle(command: Command, state: GameState): GameEvent[];
+}
+
+/**
+ * Handles validation, state transition, and event emission for player commands.
+ */
+export class CommandHandler implements ICommandHandler {
   constructor(private eventBus: EventBus) {}
 
+  /**
+   * Executes a command against the game state and returns resulting game events.
+   * @param command Command to execute
+   * @param state Mutable GameState
+   * @returns Array of generated GameEvents
+   */
   handle(command: Command, state: GameState): GameEvent[] {
     const events: GameEvent[] = [];
 
@@ -45,7 +81,6 @@ export class CommandHandler {
         break;
       }
       case 'NEW_GAME': {
-        // Handled at higher level; emit event
         const ev: GameEvent = {
           tick: state.tick,
           type: 'system',
@@ -57,7 +92,6 @@ export class CommandHandler {
       }
     }
 
-    // Emit all events via bus and also push to log
     for (const e of events) {
       state.log.push(e);
       this.eventBus.emit(e);
@@ -66,15 +100,18 @@ export class CommandHandler {
     return events;
   }
 
+  /**
+   * Handles player directional movement with bounds validation, passability checks,
+   * fog of war reveal, and fatigue consumption.
+   */
   private handleMove(direction: Direction, state: GameState): GameEvent | null {
     const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
     if (!pos) {
-      const ev: GameEvent = {
+      return {
         tick: state.tick,
         type: 'error',
         message: 'Player has no position!',
       };
-      return ev;
     }
 
     const delta = DIRECTION_DELTAS[direction];
@@ -95,7 +132,7 @@ export class CommandHandler {
       return {
         tick: state.tick,
         type: 'error',
-        message: `You cannot move ${direction}, ${TERRAIN_DESCRIPTIONS[targetTile.terrain]} blocks your path.`,
+        message: `You cannot move ${direction}, ${TERRAIN_DESCRIPTIONS[targetTile.terrain] || targetTile.terrain} blocks your path.`,
       };
     }
 
@@ -103,16 +140,19 @@ export class CommandHandler {
     pos.x = newX;
     pos.y = newY;
 
-    // Reveal
-    revealArea(state, newX, newY, 1);
+    // Reveal terrain around new position
+    revealArea(state, newX, newY, DEFAULT_REVEAL_RADIUS);
 
-    // Advance time by movement cost
+    // Advance simulation time by terrain movement cost
     advanceTime(state, targetTile.movementCost);
 
-    // Maybe increase fatigue
-    const stats = state.entities.getComponent(state.playerId, 'stats') as any;
+    // Increase fatigue based on terrain difficulty
+    const stats = state.entities.getComponent<StatsComponent>(state.playerId, 'stats');
     if (stats) {
-      stats.fatigue = Math.min(100, stats.fatigue + targetTile.movementCost * 0.5);
+      stats.fatigue = Math.min(
+        MAX_STAT_VALUE,
+        stats.fatigue + targetTile.movementCost * FATIGUE_PER_MOVE_COST
+      );
     }
 
     const desc = TERRAIN_DESCRIPTIONS[targetTile.terrain] || targetTile.terrain;
@@ -127,16 +167,27 @@ export class CommandHandler {
     };
   }
 
+  /**
+   * Handles resting for a duration, recovering fatigue while increasing hunger and thirst.
+   */
   private handleRest(hours: number, state: GameState): GameEvent {
-    const clamped = Math.max(1, Math.min(24, Math.floor(hours)));
+    const clamped = Math.max(MIN_REST_HOURS, Math.min(MAX_REST_HOURS, Math.floor(hours)));
     advanceTime(state, clamped);
 
-    // Recover fatigue, increase hunger/thirst slightly
-    const stats = state.entities.getComponent(state.playerId, 'stats') as any;
+    const stats = state.entities.getComponent<StatsComponent>(state.playerId, 'stats');
     if (stats) {
-      stats.fatigue = Math.max(0, stats.fatigue - clamped * 5);
-      stats.hunger = Math.min(100, stats.hunger + clamped * 0.8);
-      stats.thirst = Math.min(100, stats.thirst + clamped * 1.2);
+      stats.fatigue = Math.max(
+        MIN_STAT_VALUE,
+        stats.fatigue - clamped * FATIGUE_REST_RECOVERY_PER_HOUR
+      );
+      stats.hunger = Math.min(
+        MAX_STAT_VALUE,
+        stats.hunger + clamped * HUNGER_REST_INCREASE_PER_HOUR
+      );
+      stats.thirst = Math.min(
+        MAX_STAT_VALUE,
+        stats.thirst + clamped * THIRST_REST_INCREASE_PER_HOUR
+      );
     }
 
     return {
@@ -147,13 +198,15 @@ export class CommandHandler {
     };
   }
 
+  /**
+   * Handles foraging / searching current area, expanding exploration radius.
+   */
   private handleSearch(state: GameState): GameEvent {
-    advanceTime(state, 1);
+    advanceTime(state, SEARCH_TIME_COST_HOURS);
     const tile = getCurrentTile(state);
     const terrain = tile?.terrain ?? 'unknown';
 
-    // Simple random find chance
-    const found = state.rng.nextFloat() < 0.15;
+    const found = state.rng.nextFloat() < SEARCH_SUCCESS_PROBABILITY;
     let message = `You search the area (${terrain}). `;
     if (found) {
       const finds = [
@@ -168,9 +221,10 @@ export class CommandHandler {
       message += 'You find nothing of interest.';
     }
 
-    // Reveal larger area
     const pos = state.entities.getComponent<PositionComponent>(state.playerId, 'position');
-    if (pos) revealArea(state, pos.x, pos.y, 2);
+    if (pos) {
+      revealArea(state, pos.x, pos.y, SEARCH_REVEAL_RADIUS);
+    }
 
     return {
       tick: state.tick,

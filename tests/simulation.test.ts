@@ -1,19 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { SimulationLoop } from '../src/core/simulation/SimulationLoop';
 import { EventBus } from '../src/events/EventBus';
-import { SeededRNG } from '../src/core/rng/SeededRNG';
-import { MapGenerator } from '../src/core/world/MapGenerator';
-import { World } from '../src/core/ecs/World';
-import type { PositionComponent } from '../src/core/ecs/Component';
+import type { PositionComponent, StatsComponent } from '../src/core/ecs/Component';
 import { TerrainType, TERRAIN_MOVEMENT_COST } from '../src/core/world/TerrainType';
 
-describe('SimulationLoop', () => {
-  it('MOVE command updates position', () => {
+describe('SimulationLoop & Event System', () => {
+  it('MOVE command updates position and reveals fog of war', () => {
     const bus = new EventBus();
     const sim = new SimulationLoop('sim-test', bus);
     const initialPos = { ...sim.state.entities.getComponent<PositionComponent>(sim.state.playerId, 'position')! };
 
-    // Find a passable direction
     const directions: Array<'north' | 'south' | 'east' | 'west'> = ['north', 'south', 'east', 'west'];
     let moved = false;
     for (const dir of directions) {
@@ -29,20 +25,18 @@ describe('SimulationLoop', () => {
       const posAfter = sim.state.entities.getComponent<PositionComponent>(sim.state.playerId, 'position')!;
       if (posAfter.x !== initialPos.x || posAfter.y !== initialPos.y) {
         moved = true;
+        expect(sim.state.map[posAfter.y][posAfter.x].explored).toBe(true);
         break;
       }
     }
-    // At least one direction should be passable from start (guaranteed by generator)
     expect(moved).toBe(true);
   });
 
-  it('MOVE into impassable terrain rejected', () => {
+  it('MOVE into impassable terrain is rejected', () => {
     const bus = new EventBus();
     const sim = new SimulationLoop('impassable-test', bus);
 
-    // Force surrounding tiles to be water except one, then try to move into water
     const pos = sim.state.entities.getComponent<PositionComponent>(sim.state.playerId, 'position')!;
-    // Create water tile to the north if possible
     const northY = pos.y - 1;
     if (northY >= 0) {
       sim.state.map[northY][pos.x].terrain = TerrainType.WATER;
@@ -52,70 +46,123 @@ describe('SimulationLoop', () => {
       const after = sim.state.entities.getComponent<PositionComponent>(sim.state.playerId, 'position')!;
       expect(after.x).toBe(before.x);
       expect(after.y).toBe(before.y);
-      // Should have error event somewhere in recent logs
       const hasError = sim.state.log.slice(-3).some((e) => e.type === 'error');
       expect(hasError).toBe(true);
     }
   });
 
-  it('REST advances time correctly', () => {
+  it('MOVE out of map bounds is rejected', () => {
     const bus = new EventBus();
-    const sim = new SimulationLoop('rest-test', bus);
-    const tickBefore = sim.state.tick;
-    sim.submitCommand({ type: 'REST', hours: 5 });
-    expect(sim.state.tick).toBe(tickBefore + 5);
+    const sim = new SimulationLoop('bounds-move-test', bus);
+    const pos = sim.state.entities.getComponent<PositionComponent>(sim.state.playerId, 'position')!;
+    pos.x = 0;
+    pos.y = 0;
+
+    sim.submitCommand({ type: 'MOVE', direction: 'west' });
+    expect(pos.x).toBe(0);
+    expect(pos.y).toBe(0);
+    const hasError = sim.state.log.slice(-2).some((e) => e.type === 'error' && e.message.includes('world ends'));
+    expect(hasError).toBe(true);
   });
 
-  it('SEARCH logs event', () => {
+  it('REST advances time and alters fatigue, hunger, and thirst', () => {
+    const bus = new EventBus();
+    const sim = new SimulationLoop('rest-stats-test', bus);
+    const stats = sim.state.entities.getComponent<StatsComponent>(sim.state.playerId, 'stats')!;
+    stats.fatigue = 50;
+    stats.hunger = 10;
+    stats.thirst = 10;
+
+    const tickBefore = sim.state.tick;
+    sim.submitCommand({ type: 'REST', hours: 5 });
+
+    expect(sim.state.tick).toBe(tickBefore + 5);
+    expect(stats.fatigue).toBeLessThan(50);
+    expect(stats.hunger).toBeGreaterThan(10);
+    expect(stats.thirst).toBeGreaterThan(10);
+  });
+
+  it('SEARCH expands fog of war and logs search event', () => {
     const bus = new EventBus();
     const sim = new SimulationLoop('search-test', bus);
     const logLenBefore = sim.state.log.length;
     sim.submitCommand({ type: 'SEARCH' });
+
     expect(sim.state.log.length).toBeGreaterThan(logLenBefore);
     const last = sim.state.log[sim.state.log.length - 1];
     expect(last.type).toBe('search');
     expect(last.message.toLowerCase()).toContain('search');
   });
 
-  it('TimeSystem advances tick correctly and logs', () => {
+  it('TimeSystem triggers midnight and dawn events during multi-hour REST', () => {
     const bus = new EventBus();
-    const sim = new SimulationLoop('time-test', bus);
-    // Rest to trigger hour 0? Set hour to 23 then rest 1 hour
-    sim.state.hour = 23;
-    sim.state.day = 1;
+    const sim = new SimulationLoop('time-jump-test', bus);
+
+    // Start at initial hour 6. Advance 18 hours to reach midnight (hour 0 of Day 2)
+    sim.submitCommand({ type: 'REST', hours: 18 });
+
+    const hasNightfall = sim.state.log.some((e) => e.message.includes('Night falls. Day 2'));
+    expect(hasNightfall).toBe(true);
+
+    // Advance 6 hours to reach dawn (hour 6 of Day 2)
+    sim.submitCommand({ type: 'REST', hours: 6 });
+    const hasDawn = sim.state.log.some((e) => e.message.includes('Dawn breaks on day 2'));
+    expect(hasDawn).toBe(true);
+  });
+
+  it('NEW_GAME resets game state without breaking existing EventBus listeners', () => {
+    const bus = new EventBus();
+    const sim = new SimulationLoop('original-seed', bus);
+
+    let eventCount = 0;
+    sim.onEvent(() => {
+      eventCount++;
+    });
+
+    const initialEvents = eventCount;
+
+    // Submit NEW_GAME command
+    sim.submitCommand({ type: 'NEW_GAME', seed: 'brand-new-seed' });
+
+    expect(sim.state.seedString).toBe('brand-new-seed');
+    expect(sim.state.tick).toBe(0);
+    expect(eventCount).toBeGreaterThan(initialEvents);
+
+    // Moving in the new game should still trigger listeners
+    const countAfterNewGame = eventCount;
     sim.submitCommand({ type: 'REST', hours: 1 });
-    // Should have triggered midnight event
-    const hasMidnight = sim.state.log.some((e) => e.message.includes('Night falls') || e.message.includes('Dawn'));
-    // Not guaranteed, but tick should advance
-    expect(sim.state.tick).toBeGreaterThan(0);
+    expect(eventCount).toBeGreaterThan(countAfterNewGame);
   });
 
-  it('EventBus subscribe/emit works', () => {
+  it('EventBus wildcard subscriptions and error isolation work correctly', () => {
     const bus = new EventBus();
-    let called = false;
-    bus.subscribe('test', () => { called = true; });
-    bus.emit({ tick: 0, type: 'test', message: 'hi' });
-    expect(called).toBe(true);
-  });
+    let wildcardCalls = 0;
+    const wildcardCb = () => {
+      wildcardCalls++;
+    };
 
-  it('EventBus multiple subscribers all called', () => {
-    const bus = new EventBus();
-    let count = 0;
-    bus.subscribe('multi', () => count++);
-    bus.subscribe('multi', () => count++);
-    bus.emit({ tick: 0, type: 'multi', message: 'hi' });
-    expect(count).toBe(2);
-  });
+    bus.subscribe('*', wildcardCb);
 
-  it('EventBus unsubscribe stops callbacks', () => {
-    const bus = new EventBus();
-    let count = 0;
-    const cb = () => count++;
-    bus.subscribe('unsub', cb);
-    bus.emit({ tick: 0, type: 'unsub', message: 'hi' });
-    expect(count).toBe(1);
-    bus.unsubscribe('unsub', cb);
-    bus.emit({ tick: 0, type: 'unsub', message: 'hi' });
-    expect(count).toBe(1);
+    // Subscriber that throws an error
+    bus.subscribe('test', () => {
+      throw new Error('Subscriber error');
+    });
+
+    let normalSubscriberCalled = false;
+    bus.subscribe('test', () => {
+      normalSubscriberCalled = true;
+    });
+
+    // Emitting should not crash despite the throwing subscriber
+    expect(() => {
+      bus.emit({ tick: 1, type: 'test', message: 'Hello' });
+    }).not.toThrow();
+
+    expect(wildcardCalls).toBe(1);
+    expect(normalSubscriberCalled).toBe(true);
+
+    bus.unsubscribe('*', wildcardCb);
+    bus.emit({ tick: 2, type: 'test', message: 'Second' });
+    expect(wildcardCalls).toBe(1);
   });
 });

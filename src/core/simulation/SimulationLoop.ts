@@ -10,7 +10,16 @@ import { TimeSystem } from './systems/TimeSystem';
 import { EventBus } from '../../events/EventBus';
 import type { GameEvent } from '../../events/GameEvent';
 import type { PositionComponent, PlayerComponent, RenderableComponent, StatsComponent } from '../ecs/Component';
+import {
+  DEFAULT_MAX_HP,
+  DEFAULT_INITIAL_HP,
+  INITIAL_SPAWN_REVEAL_RADIUS,
+} from '../SimulationConstants';
 
+/**
+ * Main simulation coordinator managing state, world generation, player entity,
+ * command execution pipeline, systems update loop, and event notifications.
+ */
 export class SimulationLoop {
   state: GameState;
   private commandHandler: CommandHandler;
@@ -19,6 +28,11 @@ export class SimulationLoop {
   private rng: SeededRNG;
   private mapGenerator: MapGenerator;
 
+  /**
+   * Initializes a new simulation instance with a seed and optional event bus.
+   * @param seed Seed string or number
+   * @param eventBus Optional shared EventBus
+   */
   constructor(seed: string | number, eventBus?: EventBus) {
     this.eventBus = eventBus ?? new EventBus();
     this.rng = new SeededRNG(seed);
@@ -28,15 +42,15 @@ export class SimulationLoop {
     const world = new World();
     const { map, startX, startY } = this.mapGenerator.generate();
 
-    // Create player
+    // Spawn player entity
     const playerId = world.createEntity();
     const pos: PositionComponent = { type: 'position', x: startX, y: startY };
     const player: PlayerComponent = { type: 'player' };
     const renderable: RenderableComponent = { type: 'renderable', color: 0xffffff };
     const stats: StatsComponent = {
       type: 'stats',
-      hp: 100,
-      maxHp: 100,
+      hp: DEFAULT_INITIAL_HP,
+      maxHp: DEFAULT_MAX_HP,
       hunger: 0,
       thirst: 0,
       fatigue: 0,
@@ -48,13 +62,13 @@ export class SimulationLoop {
 
     this.state = createInitialGameState(seed, map, world, playerId, this.rng);
 
-    // Reveal starting area
-    revealArea(this.state, startX, startY, 2);
+    // Initial fog of war exploration around spawn
+    revealArea(this.state, startX, startY, INITIAL_SPAWN_REVEAL_RADIUS);
 
-    // Register systems
+    // Register simulation systems
     this.systems.push(new TimeSystem(this.eventBus));
 
-    // Initial log
+    // Log game start event
     const startTile = map[startY][startX];
     const initEvent: GameEvent = {
       tick: 0,
@@ -66,6 +80,10 @@ export class SimulationLoop {
     this.eventBus.emit(initEvent);
   }
 
+  /**
+   * Submits a command for execution. Processes command and invokes system updates.
+   * @param command Simulation command
+   */
   submitCommand(command: Command): void {
     if (command.type === 'NEW_GAME') {
       this.newGame(command.seed);
@@ -76,26 +94,45 @@ export class SimulationLoop {
     this.update();
   }
 
+  /**
+   * Runs all registered ECS simulation systems for the current turn.
+   */
   update(): void {
     for (const system of this.systems) {
       system.update(this.state);
     }
   }
 
+  /**
+   * Subscribes a global callback for all simulation events.
+   * @param callback Callback receiving GameEvent
+   */
   onEvent(callback: (event: GameEvent) => void): void {
     this.eventBus.subscribe('*', callback);
   }
 
+  /**
+   * Unsubscribes a global simulation event listener.
+   * @param callback Callback to remove
+   */
   offEvent(callback: (event: GameEvent) => void): void {
     this.eventBus.unsubscribe('*', callback);
   }
 
+  /**
+   * Returns internal EventBus instance.
+   * @returns EventBus
+   */
   getEventBus(): EventBus {
     return this.eventBus;
   }
 
+  /**
+   * Resets simulation state and generates a fresh world without destroying event subscriptions.
+   * @param seed Optional new seed string or number
+   */
   newGame(seed?: string | number): void {
-    const newSeed = seed ?? Date.now().toString();
+    const newSeed = seed !== undefined && seed !== '' ? seed : Date.now().toString();
     const newRng = new SeededRNG(newSeed);
     const newMapGen = new MapGenerator(newRng);
     const world = new World();
@@ -107,8 +144,8 @@ export class SimulationLoop {
     const renderable: RenderableComponent = { type: 'renderable', color: 0xffffff };
     const stats: StatsComponent = {
       type: 'stats',
-      hp: 100,
-      maxHp: 100,
+      hp: DEFAULT_INITIAL_HP,
+      maxHp: DEFAULT_MAX_HP,
       hunger: 0,
       thirst: 0,
       fatigue: 0,
@@ -121,10 +158,9 @@ export class SimulationLoop {
     this.rng = newRng;
     this.mapGenerator = newMapGen;
     this.state = createInitialGameState(newSeed, map, world, playerId, newRng);
-    revealArea(this.state, startX, startY, 2);
+    revealArea(this.state, startX, startY, INITIAL_SPAWN_REVEAL_RADIUS);
 
-    this.eventBus.clear();
-    // Re-register systems with new bus? Keep same bus but clear listeners - systems need re-init with same bus
+    // Re-initialize systems with existing EventBus (preserving UI subscriptions)
     this.systems = [new TimeSystem(this.eventBus)];
 
     const startTile = map[startY][startX];
